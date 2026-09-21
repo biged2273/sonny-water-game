@@ -84,13 +84,27 @@ function startLevel(i){
 let decor=[];
 function makeShark(x,y){ return {kind:'shark',x,y,vx:rand(-2,2),vy:0,hp:3,r:34,face:1,speed:2.1+levelIdx*0.15,cool:0,boss:false}; }
 function makeEel(x,y){ return {kind:'eel',x,y,hx:x,hy:y,vx:0,vy:0,hp:2,r:20,face:1,speed:4+levelIdx*0.2,cool:0,lunge:0,boss:false}; }
+// One boss per level: draw = sprite, ai = behaviour, shot = projectile colour
+const BOSSES = [
+  {name:'GREAT WHITE SHARK', draw:'shark',  style:'white', r:80,  speed:2.6, ai:'charge', intro:'A GREAT WHITE SHARK circles in! Hit it 20 times!'},
+  {name:'GIANT OCTOPUS',     draw:'octopus',              r:90,  speed:2.2, ai:'ink',    shot:'rgba(20,10,40,0.85)', intro:'The GIANT OCTOPUS rises from the deep! Hit it 20 times!'},
+  {name:'GIANT EEL',         draw:'eel',                  r:70,  speed:3.4, ai:'ambush', intro:'A GIANT EEL slithers out of the rocks! Hit it 20 times!'},
+  {name:'GIANT JELLYFISH',   draw:'jelly',                r:85,  speed:1.2, ai:'pulse',  shot:'rgba(255,120,220,0.8)', intro:'A GIANT JELLYFISH drifts in, stingers pulsing! Hit it 20 times!'},
+  {name:'GIANT SQUID',       draw:'squid',                r:85,  speed:3.0, ai:'jet',    shot:'rgba(10,10,30,0.9)', intro:'A GIANT SQUID jets toward you! Hit it 20 times!'},
+  {name:'GIANT CRAB',        draw:'crab',                 r:80,  speed:3.6, ai:'crab',   shot:'rgba(200,240,255,0.7)', intro:'A GIANT CRAB scuttles along the sea floor! Hit it 20 times!'},
+  {name:'GIANT ANGLERFISH',  draw:'angler',               r:80,  speed:2.4, ai:'lurk',   shot:'rgba(140,255,230,0.85)', intro:'A GIANT ANGLERFISH glows in the dark! Hit it 20 times!'},
+  {name:'GIANT ORCA',        draw:'shark',  style:'orca',  r:95,  speed:3.4, ai:'charge', intro:'A GIANT ORCA breaches the water! Hit it 20 times!'},
+  {name:'GIANT BLOBFISH',    draw:'blob',                 r:85,  speed:1.4, ai:'spit',   shot:'rgba(255,170,190,0.85)', intro:'A GIANT BLOBFISH wobbles toward you, spitting goo! Hit it 20 times!'},
+  {name:'GIANT MEGALODON',   draw:'shark',  style:'mega',  r:130, speed:3.2, ai:'charge', intro:'THE GIANT MEGALODON! King of the ocean! Hit it 20 times!'},
+];
 function makeBoss(){
-  const x=clamp(sonny.x+700,400,WORLD_W-300), y=clamp(sonny.y,SURFACE+200,WORLD_H-200);
-  if(levelIdx===FINAL) return {kind:'octopus',x,y,vx:0,vy:0,hp:20,maxHp:20,r:90,face:-1,speed:2.2,cool:0,boss:true,dash:0,ph:0};
-  return {kind:'shark',x,y,vx:0,vy:0,hp:20,maxHp:20,r:80,face:-1,speed:2.6+levelIdx*0.15,cool:0,boss:true,dash:0};
+  const B=BOSSES[levelIdx];
+  let x=clamp(sonny.x+700,400,WORLD_W-300), y=clamp(sonny.y,SURFACE+200,WORLD_H-200);
+  if(B.ai==='crab') y=WORLD_H-50-B.r*0.5;
+  return {kind:'boss',B,x,y,vx:0,vy:0,hp:20,maxHp:20,r:B.r,face:-1,speed:B.speed,cool:0,boss:true,dash:0,ph:0,hx:x,hy:y,state:0,summoned:0};
 }
 function makeHeart(){ return {x:rand(600,WORLD_W-100),y:rand(SURFACE+120,WORLD_H-80),r:14,ph:rand(0,6)}; }
-const bossName=()=>levelIdx===FINAL?'GIANT OCTOPUS':'SHARK BOSS';
+const bossName=()=>BOSSES[levelIdx].name;
 function say(t,d){ msgs.push({t,d}); }
 
 // ---------- Audio (procedural, Web Audio API) ----------
@@ -273,20 +287,18 @@ function update(){
   }
   hearts=hearts.filter(h=>h.x>-9000);
 
-  // Ink blobs (octopus attack)
-  for(const k of inks){ k.x+=k.vx; k.y+=k.vy; k.vx*=0.99; k.vy*=0.99; k.life--; if(dist(k,sonny)<sonny.r+k.r && sonny.y>SURFACE){ hurt(12); k.life=0; } }
+  // Boss projectiles
+  for(const k of inks){ k.x+=k.vx; k.y+=k.vy; k.vx*=k.drag||0.99; k.vy*=k.drag||0.99; if(k.g) k.vy+=k.g; k.life--; if(dist(k,sonny)<sonny.r+k.r && sonny.y>SURFACE){ hurt(12); k.life=0; } }
   inks=inks.filter(k=>k.life>0);
 
   // Enemies
   for(const e of enemies){
     if(e.cool>0) e.cool--;
     const d=dist(e,sonny), a=Math.atan2(sonny.y-e.y,sonny.x-e.x);
-    if(e.kind==='shark'){
-      if(e.boss){
-        if(e.dash>0){ e.dash--; }
-        else if(d<520 && e.cool===0 && Math.random()<0.02){ e.dash=40; e.vx=Math.cos(a)*e.speed*3.2; e.vy=Math.sin(a)*e.speed*3.2; e.cool=90; }
-        else { e.vx+= (Math.cos(a)*e.speed-e.vx)*0.04; e.vy+=(Math.sin(a)*e.speed-e.vy)*0.04; }
-      } else if(d<450 && !sonny.onBeach && sonny.y>SURFACE){
+    if(e.kind==='boss'){
+      updateBoss(e,d,a);
+    } else if(e.kind==='shark'){
+      if(d<450 && !sonny.onBeach && sonny.y>SURFACE){
         e.vx+=(Math.cos(a)*e.speed-e.vx)*0.05; e.vy+=(Math.sin(a)*e.speed-e.vy)*0.05;
       } else {
         if(Math.random()<0.01) e.vx=rand(-2,2);
@@ -296,17 +308,6 @@ function update(){
       e.x+=e.vx; e.y+=e.vy;
       if(e.x<500||e.x>WORLD_W-60) e.vx*=-1; if(e.y<SURFACE+80||e.y>WORLD_H-60) e.vy*=-1;
       e.x=clamp(e.x,500,WORLD_W-60); e.y=clamp(e.y,SURFACE+80,WORLD_H-60);
-      if(Math.abs(e.vx)>0.2) e.face=e.vx>0?1:-1;
-    } else if(e.kind==='octopus'){
-      e.ph+=0.05;
-      if(e.dash>0){ e.dash--; e.vx*=0.97; e.vy*=0.97; }
-      else if(d<600 && e.cool===0 && Math.random()<0.025){
-        if(Math.random()<0.5){ e.dash=45; e.vx=Math.cos(a)*e.speed*3; e.vy=Math.sin(a)*e.speed*3; }
-        else { for(let k=-1;k<=1;k++){ const aa=a+k*0.25; inks.push({x:e.x+Math.cos(aa)*60,y:e.y+Math.sin(aa)*60,vx:Math.cos(aa)*5,vy:Math.sin(aa)*5,r:14,life:110}); } Audio_.sfx.ink(); }
-        e.cool=70;
-      } else { e.vx+=(Math.cos(a)*e.speed-e.vx)*0.03; e.vy+=(Math.sin(a)*e.speed-e.vy)*0.03; }
-      e.x+=e.vx; e.y+=e.vy;
-      e.x=clamp(e.x,500,WORLD_W-60); e.y=clamp(e.y,SURFACE+120,WORLD_H-80);
       if(Math.abs(e.vx)>0.2) e.face=e.vx>0?1:-1;
     } else { // eel: lurk at home, lunge when close
       if(e.lunge>0){ e.lunge--; e.x+=e.vx; e.y+=e.vy; e.vx*=0.95; e.vy*=0.95; }
@@ -346,11 +347,68 @@ function update(){
   for(const b of bubbles){ b.y+=b.vy; b.x+=Math.sin(tick*0.1+b.r)*0.3; b.life--; }
   bubbles=bubbles.filter(b=>b.life>0 && b.y>SURFACE);
 }
+function fire(e,aa,spd,r,life,extra={}){ inks.push(Object.assign({x:e.x+Math.cos(aa)*e.r*0.7,y:e.y+Math.sin(aa)*e.r*0.7,vx:Math.cos(aa)*spd,vy:Math.sin(aa)*spd,r,life,c:e.B.shot},extra)); }
+function updateBoss(e,d,a){
+  e.ph+=0.05;
+  const seek=(k)=>{ e.vx+=(Math.cos(a)*e.speed-e.vx)*k; e.vy+=(Math.sin(a)*e.speed-e.vy)*k; };
+  const dashAt=(mult,frames,cool)=>{ e.dash=frames; e.vx=Math.cos(a)*e.speed*mult; e.vy=Math.sin(a)*e.speed*mult; e.cool=cool; };
+  const ready = e.dash===0 && e.cool===0 && d<650;
+  switch(e.B.ai){
+    case 'charge': // sharks: circle in, then bite-charge; megalodon also calls in sharks
+      if(e.dash>0){ e.dash--; e.vx*=0.985; e.vy*=0.985; }
+      else if(ready && Math.random()<0.02) dashAt(3.2,40,90);
+      else seek(0.04);
+      if(e.B.style==='mega' && e.summoned<2 && e.hp<=20-7*(e.summoned+1)){ e.summoned++; for(let k=0;k<2;k++) enemies.push(makeShark(e.x+rand(-200,200),e.y+rand(-150,150))); say('The Megalodon calls its sharks!',120); Audio_.sfx.roar(); }
+      break;
+    case 'ink': // octopus: jet dash or 3-way ink spread
+      if(e.dash>0){ e.dash--; e.vx*=0.97; e.vy*=0.97; }
+      else if(ready && Math.random()<0.025){ if(Math.random()<0.5) dashAt(3,45,70); else { for(let k=-1;k<=1;k++) fire(e,a+k*0.25,5,14,110); Audio_.sfx.ink(); e.cool=70; } }
+      else seek(0.03);
+      break;
+    case 'jet': // squid: fast jet backwards then forward strike, single fast ink shot
+      if(e.dash>0){ e.dash--; e.vx*=0.97; e.vy*=0.97; }
+      else if(ready && Math.random()<0.03){ if(Math.random()<0.6) dashAt(4,35,60); else { fire(e,a,9,12,80); Audio_.sfx.ink(); e.cool=45; } }
+      else seek(0.035);
+      break;
+    case 'ambush': // eel: retreats to lair, then lightning lunge
+      if(e.dash>0){ e.dash--; e.vx*=0.96; e.vy*=0.96; }
+      else if(ready && d<420 && Math.random()<0.04) dashAt(3.6,35,60);
+      else if(d<200) { e.vx+=(-Math.cos(a)*e.speed-e.vx)*0.05; e.vy+=(-Math.sin(a)*e.speed-e.vy)*0.05; }
+      else seek(0.05);
+      break;
+    case 'pulse': // jellyfish: drifts, rings of stinger orbs
+      seek(0.01); e.vy+=Math.sin(e.ph*2)*0.05;
+      if(e.cool===0 && d<600){ for(let k=0;k<10;k++) fire(e,k/10*Math.PI*2+e.ph,2.6,9,140,{drag:0.995}); Audio_.sfx.ink(); e.cool=110; }
+      break;
+    case 'crab': { // crab: floor-bound scuttle, leaps when Sonny is above, bubble volleys
+      const floorY=WORLD_H-50-e.r*0.5;
+      if(e.dash>0){ e.dash--; e.vy+=0.35; e.x+=0; }
+      else { e.y+= (floorY-e.y)*0.2; e.vy=0; const dx=sonny.x-e.x; e.vx+=(Math.sign(dx)*e.speed*(Math.abs(dx)>40?1:0)-e.vx)*0.1;
+        if(e.cool===0 && d<600){ if(sonny.y<e.y-120 && Math.abs(dx)<220){ e.dash=70; e.vy=-13; e.cool=90; } else { for(let k=-2;k<=2;k++) fire(e,a+k*0.18,4.5,10,100,{g:-0.03}); Audio_.sfx.ink(); e.cool=80; } } }
+      e.face = sonny.x>e.x?1:-1;
+      break; }
+    case 'lurk': // anglerfish: hangs back in the dark, dashes when you drift close, fires glowing lure orbs
+      if(e.dash>0){ e.dash--; e.vx*=0.98; e.vy*=0.98; }
+      else if(d<300 && e.cool===0) dashAt(3.4,45,80);
+      else if(e.cool===0 && d<650 && Math.random()<0.03){ fire(e,a,4,11,120,{home:true}); Audio_.sfx.ink(); e.cool=50; }
+      else { const k=d>450?0.03:0; seek(k); e.vx*=0.97; e.vy*=0.97; e.vy+=Math.sin(e.ph)*0.03; }
+      break;
+    case 'spit': // blobfish: slow wobble, sprays goo that sinks
+      seek(0.015); e.vy+=Math.sin(e.ph*1.5)*0.08;
+      if(e.cool===0 && d<600){ for(let k=0;k<5;k++) fire(e,a+(k-2)*0.3,3.5,13,150,{g:0.05,drag:0.985}); Audio_.sfx.ink(); e.cool=95; }
+      break;
+  }
+  // homing lure orbs
+  for(const k of inks) if(k.home){ const aa=Math.atan2(sonny.y-k.y,sonny.x-k.x); k.vx+=Math.cos(aa)*0.12; k.vy+=Math.sin(aa)*0.12; }
+  if(e.B.ai!=='crab'){ e.x+=e.vx; e.y+=e.vy; e.y=clamp(e.y,SURFACE+120,WORLD_H-80); if(Math.abs(e.vx)>0.2) e.face=e.vx>0?1:-1; }
+  else { e.x+=e.vx; e.y+=e.vy; e.y=Math.min(e.y,WORLD_H-50-e.r*0.5); }
+  e.x=clamp(e.x,500,WORLD_W-60);
+}
 function burst(x,y,c,n=14){ for(let k=0;k<n;k++) particles.push({x,y,vx:rand(-4,4),vy:rand(-4,4),life:rand(20,45),c}); }
 function checkBoss(){
   if(!boss && fishFound>=5 && chestsFound>=5){
     boss=makeBoss(); enemies.push(boss); bossWarn=180; Audio_.sfx.roar();
-    say(levelIdx===FINAL?'The GIANT OCTOPUS rises from the deep! Hit it 20 times!':'A GIANT SHARK appears! Hit it 20 times with your knives!',240);
+    say(BOSSES[levelIdx].intro,240);
   }
 }
 
@@ -424,8 +482,22 @@ function drawWorld(){
   for(const f of fish) if(!f.got) drawFish(f.x-cx,f.y-cy,f.c,f.vx<0?-1:1,f.r,f.ph);
   // enemies
   for(const h of hearts) drawHeart(h.x-cx,h.y-cy,h.r+Math.sin(h.ph*2)*1.5);
-  for(const e of enemies){ if(e.kind==='shark') drawShark(e.x-cx,e.y-cy,e.face,e.r,e.boss); else if(e.kind==='octopus') drawOctopus(e.x-cx,e.y-cy,e.face,e.r,e.ph); else drawEel(e.x-cx,e.y-cy,e.face,e.r); }
-  for(const k of inks){ ctx.fillStyle='rgba(20,10,40,0.85)'; ctx.beginPath(); ctx.arc(k.x-cx,k.y-cy,k.r,0,7); ctx.fill(); ctx.fillStyle='rgba(120,60,180,0.5)'; ctx.beginPath(); ctx.arc(k.x-cx-4,k.y-cy-4,k.r*0.5,0,7); ctx.fill(); }
+  for(const e of enemies){
+    const x=e.x-cx, y=e.y-cy;
+    if(e.kind==='shark') drawShark(x,y,e.face,e.r,false,'white');
+    else if(e.kind==='eel') drawEel(x,y,e.face,1);
+    else switch(e.B.draw){
+      case 'shark': drawShark(x,y,e.face,e.r,true,e.B.style); break;
+      case 'octopus': drawOctopus(x,y,e.face,e.r,e.ph); break;
+      case 'eel': drawEel(x,y,e.face,e.r/20); break;
+      case 'jelly': drawJelly(x,y,e.r,e.ph); break;
+      case 'squid': drawSquid(x,y,e.face,e.r,e.ph); break;
+      case 'crab': drawCrab(x,y,e.face,e.r,e.ph); break;
+      case 'angler': drawAngler(x,y,e.face,e.r,e.ph); break;
+      case 'blob': drawBlob(x,y,e.face,e.r,e.ph); break;
+    }
+  }
+  for(const k of inks){ ctx.fillStyle=k.c; ctx.beginPath(); ctx.arc(k.x-cx,k.y-cy,k.r,0,7); ctx.fill(); ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(k.x-cx-k.r*0.3,k.y-cy-k.r*0.3,k.r*0.4,0,7); ctx.fill(); }
   // knives
   for(const s of knives) drawKnife(s.x-cx,s.y-cy,s.a+s.spin*(s.vx>=0?1:-1));
   // Sonny
@@ -535,9 +607,10 @@ function drawChest(x,y,open){
   if(open){ ctx.fillStyle=`rgba(255,230,120,${0.5+0.4*Math.sin(tick*0.1)})`; ctx.beginPath(); ctx.arc(x,y-14,18,0,7); ctx.fill(); }
   else { ctx.fillStyle=`rgba(255,255,255,${0.5+0.5*Math.sin(tick*0.2+x)})`; ctx.beginPath(); ctx.arc(x,y-30,3,0,7); ctx.fill(); }
 }
-function drawShark(x,y,face,r,boss){
+function drawShark(x,y,face,r,boss,style){
   ctx.save(); ctx.translate(x,y); ctx.scale(face*r/34,r/34);
-  const top=boss?'#2f3446':'#5d6b7a', mid=boss?'#4a5068':'#7f8d9c', belly='#e4eaf0';
+  const orca=style==='orca', mega=style==='mega';
+  const top=orca?'#0d0f14':mega?'#2a3040':boss?'#4a5566':'#5d6b7a', mid=orca?'#15181f':mega?'#3d465a':boss?'#6a7688':'#7f8d9c', belly='#e4eaf0';
   const t=Math.sin(tick*0.18)*0.5;
   // tail (caudal fin) - upper lobe longer
   ctx.fillStyle=top; ctx.beginPath(); ctx.moveTo(-34,-2); ctx.quadraticCurveTo(-42,-10+t*4,-56,-26+t*8); ctx.quadraticCurveTo(-46,-4,-44,0); ctx.quadraticCurveTo(-46,6,-52,14+t*6); ctx.quadraticCurveTo(-42,8+t*3,-34,3); ctx.fill();
@@ -557,17 +630,18 @@ function drawShark(x,y,face,r,boss){
   ctx.strokeStyle='#1b1f2a'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(36,3); ctx.quadraticCurveTo(26,10,14,8); ctx.stroke();
   ctx.fillStyle='#fff'; for(let k=0;k<6;k++){ const tx=16+k*3.5; ctx.beginPath(); ctx.moveTo(tx,7.5-k*0.5); ctx.lineTo(tx+1.2,10-k*0.5); ctx.lineTo(tx+2.4,7.5-k*0.5); ctx.fill(); }
   // eye
-  ctx.fillStyle=boss?'#ff3030':'#0c0f14'; ctx.beginPath(); ctx.ellipse(24,-5,2.6,2.6,0,0,7); ctx.fill();
+  if(orca){ ctx.fillStyle='#e4eaf0'; ctx.beginPath(); ctx.ellipse(22,-8,5,2.5,-0.2,0,7); ctx.fill(); ctx.beginPath(); ctx.ellipse(-16,-6,8,3,0.2,0,7); ctx.fill(); } // eye patch & saddle
+  ctx.fillStyle=mega?'#ff3030':'#0c0f14'; ctx.beginPath(); ctx.ellipse(24,-5,2.6,2.6,0,0,7); ctx.fill();
   ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(24.8,-5.8,0.8,0,7); ctx.fill();
   // nostril
   ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(33,-2,1,0.6,0,0,7); ctx.fill();
-  if(boss){ // battle scars
+  if(mega){ // battle scars
     ctx.strokeStyle='rgba(255,200,200,0.6)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(-2,-8); ctx.lineTo(4,-2); ctx.moveTo(2,-9); ctx.lineTo(7,-4); ctx.stroke();
   }
   ctx.restore();
 }
-function drawEel(x,y,face,r){
-  ctx.save(); ctx.translate(x,y);
+function drawEel(x,y,face,sc){
+  ctx.save(); ctx.translate(x,y); ctx.scale(sc,sc);
   const pts=[]; for(let k=0;k<=9;k++) pts.push({x:-face*k*9, y:Math.sin(tick*0.15+k*0.7)*(4+k*0.8)});
   // body: tapered ribbon with dorsal frill
   ctx.lineCap='round'; ctx.lineJoin='round';
@@ -595,6 +669,121 @@ function drawEel(x,y,face,r){
   // nostril tubes
   ctx.strokeStyle='#3f6f33'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(13,-4); ctx.lineTo(15,-7); ctx.stroke();
   ctx.restore(); ctx.restore();
+}
+function drawJelly(x,y,r,ph){
+  ctx.save(); ctx.translate(x,y); const s=r/85; ctx.scale(s,s);
+  const pulse=1+Math.sin(ph*2)*0.06;
+  // tentacles
+  ctx.lineCap='round';
+  for(let k=0;k<14;k++){ const bx=(k-6.5)*11, sw=Math.sin(ph*1.5+k)*14; ctx.strokeStyle=k%2?'rgba(255,140,220,0.7)':'rgba(255,200,240,0.5)'; ctx.lineWidth=k%3?2.5:5;
+    ctx.beginPath(); ctx.moveTo(bx,10); ctx.bezierCurveTo(bx+sw,60,bx-sw,110,bx+sw*1.5,150+(k%3)*20); ctx.stroke(); }
+  // frilly oral arms
+  for(let k=0;k<4;k++){ const bx=(k-1.5)*22; ctx.strokeStyle='rgba(255,170,230,0.75)'; ctx.lineWidth=9; ctx.beginPath(); ctx.moveTo(bx,15); for(let q=1;q<=6;q++) ctx.lineTo(bx+Math.sin(ph*2+q+k)*12,15+q*16); ctx.stroke(); }
+  // bell
+  const g=ctx.createRadialGradient(-20,-40,5,0,-20,90); g.addColorStop(0,'rgba(255,240,255,0.95)'); g.addColorStop(0.5,'rgba(255,150,230,0.75)'); g.addColorStop(1,'rgba(200,60,180,0.55)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(-80*pulse,10); ctx.bezierCurveTo(-85*pulse,-70,-40,-100,0,-100); ctx.bezierCurveTo(40,-100,85*pulse,-70,80*pulse,10); ctx.quadraticCurveTo(0,30,-80*pulse,10); ctx.fill();
+  // scallops on rim
+  ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=3; ctx.beginPath(); for(let k=0;k<=8;k++){ const px=-80*pulse+k*20*pulse; ctx.lineTo(px,10+((k%2)?10:0)); } ctx.stroke();
+  // inner organs (four-leaf)
+  ctx.fillStyle='rgba(255,90,160,0.6)'; for(let k=0;k<4;k++){ ctx.beginPath(); ctx.ellipse(Math.cos(k*1.57)*18,-45+Math.sin(k*1.57)*14,14,10,k*0.8,0,7); ctx.fill(); }
+  // eyes (menacing)
+  for(const ex of [-22,22]){ ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex,-25,9,0,7); ctx.fill(); ctx.fillStyle='#4a0040'; ctx.beginPath(); ctx.arc(ex,-24,5,0,7); ctx.fill(); }
+  ctx.restore();
+}
+function drawSquid(x,y,face,r,ph){
+  ctx.save(); ctx.translate(x,y); const s=r/85; ctx.scale(face*s,s);
+  const body='#c0392b', dark='#7b1e14', light='#f0857a';
+  // two long feeding tentacles + 8 arms trailing behind (to the left)
+  ctx.lineCap='round';
+  for(let k=0;k<8;k++){ const by=(k-3.5)*9, sw=Math.sin(ph*2+k)*14; ctx.strokeStyle=k%2?body:dark; ctx.lineWidth=9-(k%3); ctx.beginPath(); ctx.moveTo(-30,by); ctx.bezierCurveTo(-70,by+sw,-100,by-sw,-130+Math.sin(ph+k)*10,by+sw*1.5); ctx.stroke(); }
+  for(const by of [-14,14]){ ctx.strokeStyle=light; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(-30,by); ctx.bezierCurveTo(-90,by*2,-150,by*0.5,-190+Math.sin(ph)*15,by*3); ctx.stroke(); ctx.fillStyle=light; ctx.beginPath(); ctx.ellipse(-190+Math.sin(ph)*15,by*3,12,6,0,0,7); ctx.fill(); }
+  // mantle (torpedo)
+  const g=ctx.createLinearGradient(0,-30,0,30); g.addColorStop(0,dark); g.addColorStop(0.5,body); g.addColorStop(1,light);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(-40,0); ctx.bezierCurveTo(-30,-32,40,-30,110,0); ctx.bezierCurveTo(40,30,-30,32,-40,0); ctx.fill();
+  // fins
+  ctx.fillStyle=dark; ctx.beginPath(); ctx.moveTo(40,-16); ctx.quadraticCurveTo(80,-55,110,0); ctx.quadraticCurveTo(80,55,40,16); ctx.lineTo(60,0); ctx.fill();
+  // chromatophore spots
+  ctx.fillStyle='rgba(90,10,10,0.35)'; for(let k=0;k<20;k++){ ctx.beginPath(); ctx.arc(-20+k*6,Math.sin(k*2.1)*14,2+k%3,0,7); ctx.fill(); }
+  // eye
+  ctx.fillStyle='#f5f0c8'; ctx.beginPath(); ctx.arc(-18,4,13,0,7); ctx.fill(); ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(-20,4,7,0,7); ctx.fill(); ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(-23,0,2.5,0,7); ctx.fill();
+  ctx.restore();
+}
+function drawCrab(x,y,face,r,ph){
+  ctx.save(); ctx.translate(x,y); const s=r/80; ctx.scale(s,s);
+  const shell='#c8451f', dark='#7a2410', light='#f08a5a';
+  const step=Math.sin(ph*6)*6;
+  // legs (4 per side)
+  ctx.lineCap='round'; ctx.strokeStyle=dark; ctx.lineWidth=9;
+  for(const side of [-1,1]) for(let k=0;k<4;k++){ const bx=side*(30+k*12), by=10+k*3, kx=side*(70+k*10), ky=-10+step*(k%2?1:-1)*side, fx=side*(85+k*12), fy=45; ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(kx,ky); ctx.lineTo(fx,fy); ctx.stroke(); }
+  // claws
+  for(const side of [-1,1]){ const open=Math.max(0,Math.sin(ph*3+side))*0.5; ctx.strokeStyle=shell; ctx.lineWidth=13; ctx.beginPath(); ctx.moveTo(side*40,-5); ctx.lineTo(side*85,-45); ctx.stroke();
+    ctx.save(); ctx.translate(side*85,-45); ctx.rotate(side*(-0.6));
+    ctx.fillStyle=shell; ctx.beginPath(); ctx.ellipse(0,0,30,20,0,0,7); ctx.fill();
+    ctx.fillStyle=dark; ctx.beginPath(); ctx.moveTo(15,-8); ctx.quadraticCurveTo(45,-20-open*30,50,-5); ctx.quadraticCurveTo(35,-5,15,2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(15,8); ctx.quadraticCurveTo(45,20+open*30,50,5); ctx.quadraticCurveTo(35,5,15,0); ctx.fill();
+    ctx.restore(); }
+  // carapace
+  const g=ctx.createRadialGradient(-15,-25,5,0,0,80); g.addColorStop(0,light); g.addColorStop(0.6,shell); g.addColorStop(1,dark);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(-70,10); ctx.bezierCurveTo(-75,-40,-30,-55,0,-55); ctx.bezierCurveTo(30,-55,75,-40,70,10); ctx.bezierCurveTo(50,35,-50,35,-70,10); ctx.fill();
+  // spikes on rim & shell texture
+  ctx.fillStyle=dark; for(let k=-3;k<=3;k++){ ctx.beginPath(); ctx.moveTo(k*20-6,-50+Math.abs(k)*4); ctx.lineTo(k*20,-62+Math.abs(k)*4); ctx.lineTo(k*20+6,-50+Math.abs(k)*4); ctx.fill(); }
+  ctx.fillStyle='rgba(255,255,255,0.12)'; for(let k=0;k<10;k++){ ctx.beginPath(); ctx.arc(Math.sin(k*2.7)*45,-15+Math.cos(k*1.9)*20,4,0,7); ctx.fill(); }
+  // eyestalks
+  for(const side of [-1,1]){ ctx.strokeStyle=dark; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(side*18,-50); ctx.lineTo(side*22,-75); ctx.stroke(); ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(side*22,-78,7,0,7); ctx.fill(); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(side*20,-80,2.5,0,7); ctx.fill(); }
+  // mouth
+  ctx.strokeStyle=dark; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-12,-40); ctx.lineTo(12,-40); for(let k=-2;k<=2;k++){ ctx.moveTo(k*5,-40); ctx.lineTo(k*5,-33); } ctx.stroke();
+  ctx.restore();
+}
+function drawAngler(x,y,face,r,ph){
+  ctx.save(); ctx.translate(x,y); const s=r/80; ctx.scale(face*s,s);
+  const body='#1e2a3a', dark='#0b1119', belly='#3a4a5e';
+  // lure glow
+  const lx=55, ly=-70+Math.sin(ph*2)*5;
+  const glow=ctx.createRadialGradient(lx,ly,2,lx,ly,60); glow.addColorStop(0,'rgba(160,255,240,0.9)'); glow.addColorStop(0.3,'rgba(120,255,220,0.35)'); glow.addColorStop(1,'rgba(120,255,220,0)');
+  ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(lx,ly,60,0,7); ctx.fill();
+  // lure stalk
+  ctx.strokeStyle=body; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(10,-40); ctx.quadraticCurveTo(20,-95,lx,ly); ctx.stroke();
+  ctx.fillStyle='#d8fff8'; ctx.beginPath(); ctx.arc(lx,ly,7,0,7); ctx.fill();
+  // tail & fins
+  const t=Math.sin(ph*3)*6;
+  ctx.fillStyle=dark; ctx.beginPath(); ctx.moveTo(-60,0); ctx.quadraticCurveTo(-90,-30+t,-100,-35+t); ctx.quadraticCurveTo(-85,0,-100,35+t); ctx.quadraticCurveTo(-90,30+t,-60,0); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-30,-35); ctx.quadraticCurveTo(-20,-65,10,-45); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-30,35); ctx.quadraticCurveTo(-20,60,5,42); ctx.fill();
+  // body (fat round)
+  const g=ctx.createRadialGradient(20,-20,5,0,0,90); g.addColorStop(0,belly); g.addColorStop(0.6,body); g.addColorStop(1,dark);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(70,-5); ctx.bezierCurveTo(60,-50,-10,-55,-50,-30); ctx.bezierCurveTo(-75,-10,-70,25,-40,40); ctx.bezierCurveTo(0,55,60,40,70,-5); ctx.fill();
+  // huge mouth with needle teeth
+  const open=6+Math.max(0,Math.sin(ph*1.5))*10;
+  ctx.fillStyle='#3a0a14'; ctx.beginPath(); ctx.moveTo(70,-5); ctx.quadraticCurveTo(35,15+open*0.5,-5,20+open); ctx.quadraticCurveTo(30,30+open,70,-5); ctx.fill();
+  ctx.fillStyle='#fff'; for(let k=0;k<9;k++){ const tx=65-k*8, ty=-3+k*2.5; ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(tx-1.5,ty+12+(k%2)*6); ctx.lineTo(tx-3,ty+1); ctx.fill(); ctx.beginPath(); ctx.moveTo(tx-2,22+open+k*0.5); ctx.lineTo(tx-3,10+open+(k%2)*4); ctx.lineTo(tx-5,22+open+k*0.5); ctx.fill(); }
+  // pectoral fin
+  ctx.fillStyle=belly; ctx.beginPath(); ctx.moveTo(-5,20); ctx.quadraticCurveTo(-25,50,-35,55); ctx.quadraticCurveTo(-20,30,-25,22); ctx.fill();
+  // eye (small, glowing)
+  ctx.fillStyle='#9ff5e8'; ctx.beginPath(); ctx.arc(40,-22,7,0,7); ctx.fill(); ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(41,-22,3.5,0,7); ctx.fill();
+  // photophores
+  ctx.fillStyle='rgba(160,255,240,0.6)'; for(let k=0;k<7;k++){ ctx.beginPath(); ctx.arc(-40+k*15,10+Math.sin(k)*6,1.8,0,7); ctx.fill(); }
+  ctx.restore();
+}
+function drawBlob(x,y,face,r,ph){
+  ctx.save(); ctx.translate(x,y); const s=r/85; ctx.scale(face*s,s);
+  const skin='#e9a4b4', dark='#b86c82', light='#fbd4dd';
+  const wob=Math.sin(ph*2)*6, wob2=Math.cos(ph*1.4)*5;
+  // tail & fins (small, floppy)
+  ctx.fillStyle=dark; ctx.beginPath(); ctx.moveTo(-70,0); ctx.quadraticCurveTo(-95,-20+wob,-100,-25+wob); ctx.quadraticCurveTo(-90,0,-100,25+wob); ctx.quadraticCurveTo(-95,20+wob,-70,0); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-20,-40); ctx.quadraticCurveTo(0,-70+wob2,20,-45); ctx.fill();
+  // gelatinous body
+  const g=ctx.createRadialGradient(20,-25,5,0,10,100); g.addColorStop(0,light); g.addColorStop(0.55,skin); g.addColorStop(1,dark);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(75,5+wob2); ctx.bezierCurveTo(70,-45+wob,10,-60,-40,-40+wob2); ctx.bezierCurveTo(-85,-20,-80,45,-40,55+wob); ctx.bezierCurveTo(0,70,60,55,75,5+wob2); ctx.fill();
+  // droopy nose
+  ctx.fillStyle=skin; ctx.beginPath(); ctx.moveTo(60,-15); ctx.quadraticCurveTo(95,-5,85,25+wob2); ctx.quadraticCurveTo(70,30,55,15); ctx.fill();
+  ctx.fillStyle=dark; ctx.beginPath(); ctx.ellipse(86,22+wob2,5,3,0,0,7); ctx.fill();
+  // frown mouth
+  ctx.strokeStyle=dark; ctx.lineWidth=4; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(20,35+wob); ctx.quadraticCurveTo(50,20+wob,72,38+wob2); ctx.stroke();
+  // sad eyes
+  for(const [ex,ey] of [[35,-12],[10,-8]]){ ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(ex,ey,11,9,0,0,7); ctx.fill(); ctx.fillStyle='#222'; ctx.beginPath(); ctx.arc(ex+2,ey+1,5,0,7); ctx.fill(); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ex+4,ey-2,1.8,0,7); ctx.fill(); ctx.strokeStyle=dark; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(ex-12,ey-14); ctx.lineTo(ex+10,ey-10); ctx.stroke(); }
+  // wobbly highlights
+  ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.ellipse(-10,-25+wob2,25,10,0.3,0,7); ctx.fill();
+  ctx.restore();
 }
 function drawOctopus(x,y,face,r,ph){
   ctx.save(); ctx.translate(x,y); const s=r/90;
@@ -665,7 +854,7 @@ function drawLevelDone(){
   ctx.textAlign='center'; ctx.fillStyle='#ffe66d'; ctx.font='bold 44px Trebuchet MS';
   ctx.fillText(`${L.name} cleared!`,W/2,H/2-60);
   ctx.fillStyle='#fff'; ctx.font='22px Trebuchet MS';
-  ctx.fillText(`Sonny found all 5 fish, 5 treasures and beat the ${levelIdx===FINAL?'giant octopus':'shark boss'}.`,W/2,H/2-10);
+  ctx.fillText(`Sonny found all 5 fish, 5 treasures and beat the ${bossName()}.`,W/2,H/2-10);
   ctx.fillText(`Wipeouts this level: ${deaths}`,W/2,H/2+30);
   if(levelDoneT>60){ ctx.fillStyle='#7ad7ff'; ctx.fillText(levelIdx+1<LEVELS.length?`Press Enter to travel to ${LEVELS[levelIdx+1].name}`:'Press Enter to finish the adventure',W/2,H/2+90); }
 }
@@ -674,7 +863,7 @@ function drawTitle(){
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
   ctx.textAlign='center'; ctx.fillStyle='#ffe66d'; ctx.font='bold 60px Trebuchet MS'; ctx.fillText("SONNY'S DEEP DIVE",W/2,140);
   ctx.fillStyle='#fff'; ctx.font='20px Trebuchet MS';
-  const lines=['Sonny explores 10 beaches around the world.','Dive with your goggles and find 5 new fish and 5 treasure chests per level.','Watch out for sharks and eels! Throw knives at them. Grab heart coins to heal.','Collect everything to summon the Shark Boss — 20 knife hits to win.','On the final beach, a Giant Octopus guards the deep! Unlimited lives.','','Move: WASD / Arrows    Fire: Space / Click (shoots where Sonny faces)    Dive: S at the water'];
+  const lines=['Sonny explores 10 beaches around the world.','Dive with your goggles and find 5 new fish and 5 treasure chests per level.','Watch out for sharks and eels! Throw knives at them. Grab heart coins to heal.','Collect everything to summon that beach\'s giant boss — 20 knife hits to win.','10 bosses: Great White, Octopus, Eel, Jellyfish, Squid, Crab, Anglerfish, Orca, Blobfish, Megalodon!','','Move: WASD / Arrows    Fire: Space / Click (shoots where Sonny faces)    Dive: S at the water'];
   lines.forEach((l,i)=>ctx.fillText(l,W/2,220+i*30));
   ctx.fillStyle=`rgba(255,255,255,${0.6+0.4*Math.sin(tick*0.1)})`; ctx.font='bold 26px Trebuchet MS'; ctx.fillText('Press Enter or Click to start',W/2,500);
   // a little Sonny on the title
@@ -686,7 +875,7 @@ function drawWin(){
   ctx.textAlign='center'; ctx.fillStyle='#ffe66d'; ctx.font='bold 56px Trebuchet MS'; ctx.fillText('WORLD TOUR COMPLETE!',W/2,200);
   ctx.fillStyle='#fff'; ctx.font='24px Trebuchet MS';
   ctx.fillText('Sonny explored all 10 beaches, found 50 fish, 50 treasures',W/2,270);
-  ctx.fillText('defeated 9 shark bosses and the Giant Octopus!',W/2,305);
+  ctx.fillText('and defeated all 10 giant bosses, even the Megalodon!',W/2,305);
   ctx.fillText(`Total wipeouts: ${totalDeaths}`,W/2,360);
   ctx.fillStyle='#7ad7ff'; ctx.fillText('Press Enter to play again',W/2,440);
 }
