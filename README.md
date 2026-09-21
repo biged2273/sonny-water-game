@@ -4,4 +4,6 @@ Browser game: Sonny dives at 10 beaches to find 5 fish and 5 treasure chests per
 
 Open `index.html` in a browser to play.
 
-Controls: WASD/Arrows move, S at the water to dive, Space/Click fires the spear the way Sonny faces.
+Controls: WASD/Arrows move, S at the water to dive, Space/Click fires the spear the way Sonny faces, M mutes music.
+
+Music and sound effects are synthesized live with the Web Audio API.
